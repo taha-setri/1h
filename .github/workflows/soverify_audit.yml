@@ -1,0 +1,53 @@
+name: Soverify Code Security Audit
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Run Soverify Audit
+      env:
+        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      run: |
+        python -c "
+        import os, requests, glob
+
+        api_key = os.getenv('NVIDIA_API_KEY')
+        files = glob.glob('**/*.py', recursive=True) + glob.glob('**/*.js', recursive=True)
+        
+        combined_code = ''
+        for f in files[:5]:
+            with open(f, 'r', encoding='utf-8', errors='ignore') as file_content:
+                combined_code += f'\n--- {f} ---\n' + file_content.read()[:1000]
+
+        if combined_code:
+            url = 'https://integrate.api.nvidia.com/v1/chat/completions'
+            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+            payload = {
+                'model': 'meta/llama-3.1-8b-instruct',
+                'messages': [{'role': 'user', 'content': f'Quick CI/CD Security Audit:\n{combined_code}'}],
+                'temperature': 0.2
+            }
+            res = requests.post(url, headers=headers, json=payload)
+            print('--- SOVERIFY AUDIT RESULTS ---')
+            print(res.json()['choices'][0]['message']['content'])
+        "
